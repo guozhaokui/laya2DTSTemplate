@@ -7,3 +7,5 @@ this.image = new laya.ui.Image('test.png');
 ```javascript
 this.image = new Image('test.png');
 ```
+可以这样
+import WebGL = laya.webgl.WebGL
