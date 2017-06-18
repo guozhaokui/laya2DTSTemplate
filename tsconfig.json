@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "es6",
+    "sourceMap": true,
+     "outFile": "bin/js/game.js"
+
+  },
+  "exclude": [
+    "node_modules"
+  ]
+}
