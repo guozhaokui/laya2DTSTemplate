@@ -149,8 +149,6 @@
 								}
 						}
 						keyFrame.data=new Float32Array(keyframeDataCount);
-						keyFrame.dData=new Float32Array(keyframeDataCount);
-						keyFrame.nextData=new Float32Array(keyframeDataCount);
 						for (l=0;l < keyframeDataCount;l++){
 							keyFrame.data[l]=reader.getFloat32();
 							if (keyFrame.data[l] >-0.00000001 && keyFrame.data[l] < 0.00000001)keyFrame.data[l]=0;
@@ -264,8 +262,6 @@
 						{};
 						keyFrame.startTime=reader.getFloat32();
 						(lastKeyFrame)&& (lastKeyFrame.duration=keyFrame.startTime-lastKeyFrame.startTime);
-						keyFrame.dData=new Float32Array(keyframeWidth);
-						keyFrame.nextData=new Float32Array(keyframeWidth);
 						var offset=AnimationParser02._DATA.offset;
 						var keyframeDataOffset=reader.getUint32();
 						var keyframeDataLength=keyframeWidth *4;
@@ -373,6 +369,9 @@
 							Matrix.TEMP.copyTo(tTestMatrix);
 							tResultMatrix=this.resultTransform.getMatrix();
 							Matrix.mul(tResultMatrix,tTestMatrix,this.resultMatrix);
+							if (this.resultTransform.scX *this.resultTransform.scY < 0){
+								this.resultMatrix.rotate(Math.PI*0.5);
+							}
 							this.resultMatrix.tx=worldX;
 							this.resultMatrix.ty=worldY;
 						}
@@ -1731,6 +1730,8 @@
 		*@param graphics
 		*/
 		__proto.apply=function(boneList,graphics){
+			if (!this.target)
+				return;
 			var tTranslateMix=this.translateMix;
 			var tRotateMix=this.translateMix;
 			var tTranslate=tTranslateMix > 0;
@@ -1866,17 +1867,31 @@
 			var vx=0;
 			var vy=0;
 			var bone;
+			var len=0;
 			if (tBones==null){
 				if (!tTriangles)tTriangles=tWeights;
 				if (boneSlot.deformData)
 					tTriangles=boneSlot.deformData;
-				bone=boneSlot.parent;
+				var parentName;
+				parentName=boneSlot.parent;
+				if (boneList){
+					len=boneList.length;
+					for (i=0;i < len;i++){
+						if (boneList[i].name==parentName){
+							bone=boneList[i];
+							break ;
+						}
+					}
+				};
 				var tBoneMt;
-				tBoneMt=bone.resultMatrix;
+				if (bone){
+					tBoneMt=bone.resultMatrix;
+				}
 				if (!tBoneMt)tBoneMt=PathConstraint._tempMt;
 				var x=tBoneMt.tx;
 				var y=tBoneMt.ty;
 				var a=tBoneMt.a,bb=tBoneMt.b,c=tBoneMt.c,d=tBoneMt.d;
+				if(bone)d*=bone.d;
 				for (v=start,w=offset;w < count;v+=2,w+=2){
 					vx=tTriangles[v],vy=tTriangles[v+1];
 					worldVertices[w]=vx *a+vy *bb+x;
@@ -2572,7 +2587,6 @@
 			this.duration=NaN;
 			this.interpolationData=null;
 			this.data=null;
-			this.dData=null;
 			this.nextData=null;
 		}
 
@@ -3192,23 +3206,12 @@
 		/**
 		*@private
 		*/
-		__proto._endLoaded=function(){
-			this._loaded=true;
-			this.event(/*laya.events.Event.LOADED*/"loaded",this);
-		}
-
-		/**
-		*@private
-		*/
 		__proto._calculateKeyFrame=function(node,keyframeCount,keyframeDataCount){
 			var keyFrames=node.keyFrame;
 			keyFrames[keyframeCount]=keyFrames[0];
 			for (var i=0;i < keyframeCount;i++){
 				var keyFrame=keyFrames[i];
-				for (var j=0;j < keyframeDataCount;j++){
-					keyFrame.dData[j]=(keyFrame.duration===0)? 0 :(keyFrames[i+1].data[j]-keyFrame.data[j])/ keyFrame.duration;
-					keyFrame.nextData[j]=keyFrames[i+1].data[j];
-				}
+				keyFrame.nextData=(keyFrame.duration===0)? keyFrame.data :keyFrames[i+1].data;
 			}
 			keyFrames.length--;
 		}
@@ -3227,6 +3230,21 @@
 					AnimationParser01.parse(this,reader);
 				}
 			this._endLoaded();
+		}
+
+		/**
+		*@inheritDoc
+		*/
+		__proto.detoryResource=function(){
+			this._aniVersion=null;
+			this._anis=null;
+			this._aniMap=null;
+			this._publicExtData=null;
+			this.unfixedCurrentFrameIndexes=null;
+			this.unfixedCurrentTimes=null;
+			this.unfixedKeyframes=null;
+			this._aniClassName=null;
+			this._animationDatasCache=null;
 		}
 
 		__proto.getAnimationCount=function(){
@@ -3297,7 +3315,7 @@
 						case 0:
 						case 1:
 							for (j=0;j < node.keyframeWidth;)
-							j+=node.interpolationMethod[j](node,j,originalData,outOfs+j,key.data,dt,key.dData,key.duration,key.nextData);
+							j+=node.interpolationMethod[j](node,j,originalData,outOfs+j,key.data,dt,null,key.duration,key.nextData);
 							break ;
 						case 2:;
 							var interpolationData=key.interpolationData;
@@ -3307,13 +3325,13 @@
 								var type=interpolationData[j];
 							switch (type){
 								case 6:
-									j+=AnimationTemplet.interpolation[type](node,dataIndex,originalData,outOfs+dataIndex,key.data,dt,key.dData,key.duration,key.nextData,interpolationData,j+1);
+									j+=AnimationTemplet.interpolation[type](node,dataIndex,originalData,outOfs+dataIndex,key.data,dt,null,key.duration,key.nextData,interpolationData,j+1);
 									break ;
 								case 7:
-									j+=AnimationTemplet.interpolation[type](node,dataIndex,originalData,outOfs+dataIndex,key.data,dt,key.dData,key.duration,key.nextData,interpolationData,j+1);
+									j+=AnimationTemplet.interpolation[type](node,dataIndex,originalData,outOfs+dataIndex,key.data,dt,null,key.duration,key.nextData,interpolationData,j+1);
 									break ;
 								default :
-									j+=AnimationTemplet.interpolation[type](node,dataIndex,originalData,outOfs+dataIndex,key.data,dt,key.dData,key.duration,key.nextData);
+									j+=AnimationTemplet.interpolation[type](node,dataIndex,originalData,outOfs+dataIndex,key.data,dt,null,key.duration,key.nextData);
 								}
 							dataIndex++;
 						}
@@ -3321,7 +3339,7 @@
 					}
 					}else {
 					for (j=0;j < node.keyframeWidth;)
-					j+=node.interpolationMethod[j](node,j,originalData,outOfs+j,key.data,dt,key.dData,key.duration,key.nextData);
+					j+=node.interpolationMethod[j](node,j,originalData,outOfs+j,key.data,dt,null,key.duration,key.nextData);
 				}
 				outOfs+=node.keyframeWidth;
 			}
@@ -3380,7 +3398,7 @@
 						case 0:
 						case 1:
 							for (j=0;j < node.keyframeWidth;)
-							j+=node.interpolationMethod[j](node,j,originalData,outOfs+j,key.data,dt,key.dData,key.duration,key.nextData);
+							j+=node.interpolationMethod[j](node,j,originalData,outOfs+j,key.data,dt,null,key.duration,key.nextData);
 							break ;
 						case 2:;
 							var interpolationData=key.interpolationData;
@@ -3390,13 +3408,13 @@
 								var type=interpolationData[j];
 							switch (type){
 								case 6:
-									j+=AnimationTemplet.interpolation[type](node,dataIndex,originalData,outOfs+dataIndex,key.data,dt,key.dData,key.duration,key.nextData,interpolationData,j+1);
+									j+=AnimationTemplet.interpolation[type](node,dataIndex,originalData,outOfs+dataIndex,key.data,dt,null,key.duration,key.nextData,interpolationData,j+1);
 									break ;
 								case 7:
-									j+=AnimationTemplet.interpolation[type](node,dataIndex,originalData,outOfs+dataIndex,key.data,dt,key.dData,key.duration,key.nextData,interpolationData,j+1);
+									j+=AnimationTemplet.interpolation[type](node,dataIndex,originalData,outOfs+dataIndex,key.data,dt,null,key.duration,key.nextData,interpolationData,j+1);
 									break ;
 								default :
-									j+=AnimationTemplet.interpolation[type](node,dataIndex,originalData,outOfs+dataIndex,key.data,dt,key.dData,key.duration,key.nextData);
+									j+=AnimationTemplet.interpolation[type](node,dataIndex,originalData,outOfs+dataIndex,key.data,dt,null,key.duration,key.nextData);
 								}
 							dataIndex++;
 						}
@@ -3404,20 +3422,15 @@
 					}
 					}else {
 					for (j=0;j < node.keyframeWidth;)
-					j+=node.interpolationMethod[j](node,j,originalData,outOfs+j,key.data,dt,key.dData,key.duration,key.nextData);
+					j+=node.interpolationMethod[j](node,j,originalData,outOfs+j,key.data,dt,null,key.duration,key.nextData);
 				}
 				outOfs+=node.keyframeWidth;
 			}
 		}
 
-		__proto.dispose=function(){
-			if (this.resourceManager)
-				this.resourceManager.removeResource(this);
-			_super.prototype.dispose.call(this);
-		}
-
 		AnimationTemplet._LinearInterpolation_0=function(bone,index,out,outOfs,data,dt,dData,duration,nextData,interData){
-			out[outOfs]=data[index]+dt *dData[index];
+			var amount=duration===0 ? 0 :dt / duration;
+			out[outOfs]=(1.0-amount)*data[index]+amount *nextData[index];
 			return 1;
 		}
 
@@ -3759,7 +3772,7 @@
 		*初始化动画
 		*@param templet 模板
 		*@param aniMode 动画模式
-		*<table border=1>
+		*<table>
 		*<tr><th>模式</th><th>描述</th></tr>
 		*<tr>
 		*<td>0</td> <td>使用模板缓冲的数据，模板缓冲的数据，不允许修改（内存开销小，计算开销小，不支持换装）</td>
@@ -3855,13 +3868,23 @@
 			var tFactory;
 			tFactory=Templet.TEMPLET_DICTIONARY[this._aniPath];
 			if (tFactory){
-				tFactory.isParseFail ? this._parseFail():this._parseComplete();
+				if (tFactory.isParseFail){
+					this._parseFail();
+					}else{
+					if (tFactory.isParserComplete){
+						this._parseComplete();
+						}else{
+						tFactory.on(/*laya.events.Event.COMPLETE*/"complete",this,this._parseComplete);
+						tFactory.on(/*laya.events.Event.ERROR*/"error",this,this._parseFail);
+					}
+				}
 				}else {
 				tFactory=new Templet();
 				tFactory.url=this._aniPath;
 				Templet.TEMPLET_DICTIONARY[this._aniPath]=tFactory;
 				tFactory.on(/*laya.events.Event.COMPLETE*/"complete",this,this._parseComplete);
 				tFactory.on(/*laya.events.Event.ERROR*/"error",this,this._parseFail);
+				tFactory.isParserComplete=false;
 				tFactory.parseData(null,arraybuffer);
 			}
 		}
@@ -3979,7 +4002,7 @@
 			if (autoKey && this._indexControl){
 				return;
 			};
-			var tCurrTime=Laya.timer.currTimer;
+			var tCurrTime=this.timer.currTimer;
 			var preIndex=this._player.currentKeyframeIndex;
 			var dTime=tCurrTime-this._lastTime;
 			if (autoKey){
@@ -4522,7 +4545,7 @@
 					if (this._pause){
 						this._pause=false;
 						this._lastTime=Browser.now();
-						Laya.stage.frameLoop(1,this,this._update,null,true);
+						this.timer.frameLoop(1,this,this._update,null,true);
 					}
 					this._update();
 				}
@@ -4538,7 +4561,7 @@
 				if (this._player){
 					this._player.stop(true);
 				}
-				Laya.timer.clear(this,this._update);
+				this.timer.clear(this,this._update);
 			}
 		}
 
@@ -4561,7 +4584,7 @@
 				if (this._player){
 					this._player.paused=true;
 				}
-				Laya.timer.clear(this,this._update);
+				this.timer.clear(this,this._update);
 			}
 		}
 
@@ -4576,7 +4599,7 @@
 					this._player.paused=false;
 				}
 				this._lastTime=Browser.now();
-				Laya.stage.frameLoop(1,this,this._update,null,true);
+				this.timer.frameLoop(1,this,this._update,null,true);
 			}
 		}
 
@@ -4614,7 +4637,7 @@
 			this._curOriginalData=null;
 			this._boneMatrixArray.length=0;
 			this._lastTime=0;
-			Laya.timer.clear(this,this._update);
+			this.timer.clear(this,this._update);
 		}
 
 		/**
@@ -4740,8 +4763,8 @@
 
 		/**@private */
 		__proto._$3__onDisplay=function(value){
-			if (value)Laya.timer.loop(this.interval,this,this.updates,null,true);
-			else Laya.timer.clear(this,this.updates);
+			if (value)this.timer.loop(this.interval,this,this.updates,null,true);
+			else this.timer.clear(this,this.updates);
 		}
 
 		/**@private 更新时间轴*/
@@ -4833,7 +4856,7 @@
 			this.stop();
 			this._idOfSprite.length=0;
 			if (!this._parentMovieClip){
-				Laya.timer.clear(this,this.updates);
+				this.timer.clear(this,this.updates);
 				var i=0,len=0;
 				len=this._movieClipList.length;
 				for (i=0;i < len;i++){
@@ -5058,7 +5081,7 @@
 			this._initState();
 			this.play(0);
 			this.event(/*laya.events.Event.LOADED*/"loaded");
-			if (!this._parentMovieClip)Laya.timer.loop(this.interval,this,this.updates,null,true);
+			if (!this._parentMovieClip)this.timer.loop(this.interval,this,this.updates,null,true);
 		}
 
 		/**
@@ -5136,6 +5159,7 @@
 			this.deformAniArr=[];
 			this._isDestroyed=false;
 			this._rate=30;
+			this.isParserComplete=false;
 			this.aniSectionDic={};
 			this._skBufferUrl=null;
 			this._textureDic={};
@@ -5214,7 +5238,7 @@
 				console.log("[Error] 版本不一致，请使用IDE版本配套的重新导出"+this._aniVersion+"->"+Templet.LAYA_ANIMATION_VISION);
 				this._loaded=false;
 			}
-			if (this._loaded){
+			if (this.loaded){
 				if (this._mainTexture){
 					this._parsePublicExtData();
 					}else {
@@ -5305,6 +5329,11 @@
 				tTextureName=tTextureNameArr[i *2+1];
 				if (this._mainTexture==null){
 					tTexture=this._textureDic[tSrcTexturePath];
+				}
+				if (!tTexture){
+					this.event(/*laya.events.Event.ERROR*/"error",this);
+					this.isParseFail=true;
+					return;
 				}
 				tX=tByte.getFloat32();
 				tY=tByte.getFloat32();
@@ -5657,6 +5686,7 @@
 				}
 			}
 			this.showSkinByIndex(this.boneSlotDic,0);
+			this.isParserComplete=true;
 			this.event(/*laya.events.Event.COMPLETE*/"complete",this);
 		}
 
@@ -5753,12 +5783,14 @@
 			var tTexture;
 			/*for each*/for(var $each_tTexture in this.subTextureDic){
 				tTexture=this.subTextureDic[$each_tTexture];
-				tTexture.destroy();
+				if(tTexture)
+					tTexture.destroy();
 			}
 			var $each_tTexture;
 			/*for each*/for($each_tTexture in this._textureDic){
 				tTexture=this._textureDic[$each_tTexture];
-				tTexture.destroy();
+				if(tTexture)
+					tTexture.destroy();
 			};
 			var tSkinSlotDisplayData;
 			for (var i=0,n=this.skinSlotDisplayDataArr.length;i < n;i++){
